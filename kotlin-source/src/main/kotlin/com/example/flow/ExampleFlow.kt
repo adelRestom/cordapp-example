@@ -14,6 +14,7 @@ import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.TransactionBuilder
 import net.corda.core.utilities.ProgressTracker
 import net.corda.core.utilities.ProgressTracker.Step
+import net.corda.core.contracts.StateRef
 
 /**
  * This flow allows two parties (the [Initiator] and the [Acceptor]) to come to an agreement about the IOU encapsulated
@@ -117,8 +118,7 @@ object ExampleFlow {
 
     @InitiatingFlow
     @StartableByRPC
-    class DestroyInitiator(val iouState: IOUState,
-                           val otherParty: Party) : FlowLogic<SignedTransaction>() {
+    class DestroyIOUInitiator(val iouRef: StateRef) : FlowLogic<SignedTransaction>() {
         /**
          * The progress tracker checkpoints each stage of the flow and outputs the specified messages when each
          * checkpoint is reached in the code. See the 'progressTracker.currentStep' expressions within the call() function.
@@ -151,15 +151,15 @@ object ExampleFlow {
          */
         @Suspendable
         override fun call(): SignedTransaction {
+            val iouState = serviceHub.toStateAndRef<IOUState>(iouRef).state
             // Obtain a reference to the notary we want to use.
-            val notary = serviceHub.networkMapCache.notaryIdentities[0]
+            val notary = iouState.notary;
 
             // Stage 1.
             progressTracker.currentStep = GENERATING_TRANSACTION
             // Generate an unsigned transaction.
-            val txCommand = Command(IOUContract.Commands.Destroy(), iouState.participants.map { it.owningKey })
+            val txCommand = Command(IOUContract.Commands.Destroy(), iouState.data.participants.map { it.owningKey })
             val txBuilder = TransactionBuilder(notary)
-                    .addOutputState(iouState, IOU_CONTRACT_ID)
                     .addCommand(txCommand)
 
             // Stage 2.
@@ -175,8 +175,8 @@ object ExampleFlow {
             // Stage 4.
             progressTracker.currentStep = GATHERING_SIGS
             // Send the state to the counterparty, and receive it back with their signature.
-            val otherPartyFlow = initiateFlow(otherParty)
-            val fullySignedTx = subFlow(CollectSignaturesFlow(partSignedTx, setOf(otherPartyFlow), GATHERING_SIGS.childProgressTracker()))
+            val otherPartyFlow = initiateFlow(iouState.data.borrower)
+            val fullySignedTx = subFlow(CollectSignaturesFlow(partSignedTx,setOf(otherPartyFlow), GATHERING_SIGS.childProgressTracker()))
 
             // Stage 5.
             progressTracker.currentStep = FINALISING_TRANSACTION
@@ -185,8 +185,8 @@ object ExampleFlow {
         }
     }
 
-    @InitiatedBy(DestroyInitiator::class)
-    class DestroyAcceptor(val otherPartyFlow: FlowSession) : FlowLogic<SignedTransaction>() {
+    @InitiatedBy(DestroyIOUInitiator::class)
+    class DestroyIOUAcceptor(val otherPartyFlow: FlowSession) : FlowLogic<SignedTransaction>() {
         @Suspendable
         override fun call(): SignedTransaction {
             val signTransactionFlow = object : SignTransactionFlow(otherPartyFlow) {
