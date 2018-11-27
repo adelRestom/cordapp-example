@@ -118,7 +118,7 @@ object ExampleFlow {
 
     @InitiatingFlow
     @StartableByRPC
-    class DestroyIOUInitiator(val iouRef: StateRef) : FlowLogic<SignedTransaction>() {
+    class DestroyIOUInitiator(val stateRef: StateRef) : FlowLogic<SignedTransaction>() {
         /**
          * The progress tracker checkpoints each stage of the flow and outputs the specified messages when each
          * checkpoint is reached in the code. See the 'progressTracker.currentStep' expressions within the call() function.
@@ -151,15 +151,16 @@ object ExampleFlow {
          */
         @Suspendable
         override fun call(): SignedTransaction {
-            val iouState = serviceHub.toStateAndRef<IOUState>(iouRef).state
+            val iouStateRef = serviceHub.toStateAndRef<IOUState>(stateRef)
             // Obtain a reference to the notary we want to use.
-            val notary = iouState.notary;
+            val notary = iouStateRef.state.notary;
 
             // Stage 1.
             progressTracker.currentStep = GENERATING_TRANSACTION
             // Generate an unsigned transaction.
-            val txCommand = Command(IOUContract.Commands.Destroy(), iouState.data.participants.map { it.owningKey })
+            val txCommand = Command(IOUContract.Commands.Destroy(), iouStateRef.state.data.participants.map { it.owningKey })
             val txBuilder = TransactionBuilder(notary)
+                    .addInputState(iouStateRef)
                     .addCommand(txCommand)
 
             // Stage 2.
@@ -175,7 +176,13 @@ object ExampleFlow {
             // Stage 4.
             progressTracker.currentStep = GATHERING_SIGS
             // Send the state to the counterparty, and receive it back with their signature.
-            val otherPartyFlow = initiateFlow(iouState.data.borrower)
+            val otherPartyFlow: FlowSession
+            if (partSignedTx.sigs[0].by == iouStateRef.state.data.lender.owningKey) {
+                otherPartyFlow = initiateFlow(iouStateRef.state.data.borrower)
+            }
+            else {
+                otherPartyFlow = initiateFlow(iouStateRef.state.data.lender)
+            }
             val fullySignedTx = subFlow(CollectSignaturesFlow(partSignedTx,setOf(otherPartyFlow), GATHERING_SIGS.childProgressTracker()))
 
             // Stage 5.
