@@ -154,6 +154,11 @@ object ExampleFlow {
             val iouStateAndRef = serviceHub.toStateAndRef<IOUState>(stateRef)
             // Obtain a reference to the notary we want to use.
             val notary = iouStateAndRef.state.notary;
+            val myParty = serviceHub.myInfo.legalIdentities.first()
+
+            requireThat {
+                "Only the borrower or the lender can initiate the flow." using (myParty == iouStateAndRef.state.data.lender || myParty == iouStateAndRef.state.data.borrower)
+            }
 
             // Stage 1.
             progressTracker.currentStep = GENERATING_TRANSACTION
@@ -176,7 +181,6 @@ object ExampleFlow {
             // Stage 4.
             progressTracker.currentStep = GATHERING_SIGS
             // Send the state to the counterparty, and receive it back with their signature.
-            val myParty = serviceHub.identityService.partyFromKey(partSignedTx.sigs[0].by)
             val counterParty = iouStateAndRef.state.data.participants.minus(myParty).single()
             val otherPartyFlow = initiateFlow(counterParty!!)
             val fullySignedTx = subFlow(CollectSignaturesFlow(partSignedTx, setOf(otherPartyFlow), GATHERING_SIGS.childProgressTracker()))
