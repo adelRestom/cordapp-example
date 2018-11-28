@@ -7,6 +7,7 @@ import com.example.flow.ExampleFlow.Acceptor
 import com.example.flow.ExampleFlow.Initiator
 import com.example.state.IOUState
 import net.corda.core.contracts.Command
+import net.corda.core.contracts.StateRef
 import net.corda.core.contracts.requireThat
 import net.corda.core.flows.*
 import net.corda.core.identity.Party
@@ -14,8 +15,6 @@ import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.TransactionBuilder
 import net.corda.core.utilities.ProgressTracker
 import net.corda.core.utilities.ProgressTracker.Step
-import net.corda.core.contracts.StateRef
-import net.corda.core.identity.AbstractParty
 
 /**
  * This flow allows two parties (the [Initiator] and the [Acceptor]) to come to an agreement about the IOU encapsulated
@@ -177,9 +176,10 @@ object ExampleFlow {
             // Stage 4.
             progressTracker.currentStep = GATHERING_SIGS
             // Send the state to the counterparty, and receive it back with their signature.
-            val counterParty = iouStateAndRef.state.data.participants.minus(serviceHub.myInfo.legalIdentities.single()).single()
-            val otherPartyFlow = initiateFlow(counterParty)
-            val fullySignedTx = subFlow(CollectSignaturesFlow(partSignedTx,setOf(otherPartyFlow), GATHERING_SIGS.childProgressTracker()))
+            val myParty = serviceHub.identityService.partyFromKey(partSignedTx.sigs[0].by)
+            val counterParty = iouStateAndRef.state.data.participants.minus(myParty).single()
+            val otherPartyFlow = initiateFlow(counterParty!!)
+            val fullySignedTx = subFlow(CollectSignaturesFlow(partSignedTx, setOf(otherPartyFlow), GATHERING_SIGS.childProgressTracker()))
 
             // Stage 5.
             progressTracker.currentStep = FINALISING_TRANSACTION
