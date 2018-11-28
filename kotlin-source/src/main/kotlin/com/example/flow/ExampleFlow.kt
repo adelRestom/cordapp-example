@@ -15,6 +15,7 @@ import net.corda.core.transactions.TransactionBuilder
 import net.corda.core.utilities.ProgressTracker
 import net.corda.core.utilities.ProgressTracker.Step
 import net.corda.core.contracts.StateRef
+import net.corda.core.identity.AbstractParty
 
 /**
  * This flow allows two parties (the [Initiator] and the [Acceptor]) to come to an agreement about the IOU encapsulated
@@ -151,16 +152,16 @@ object ExampleFlow {
          */
         @Suspendable
         override fun call(): SignedTransaction {
-            val iouStateRef = serviceHub.toStateAndRef<IOUState>(stateRef)
+            val iouStateAndRef = serviceHub.toStateAndRef<IOUState>(stateRef)
             // Obtain a reference to the notary we want to use.
-            val notary = iouStateRef.state.notary;
+            val notary = iouStateAndRef.state.notary;
 
             // Stage 1.
             progressTracker.currentStep = GENERATING_TRANSACTION
             // Generate an unsigned transaction.
-            val txCommand = Command(IOUContract.Commands.Destroy(), iouStateRef.state.data.participants.map { it.owningKey })
+            val txCommand = Command(IOUContract.Commands.Destroy(), iouStateAndRef.state.data.participants.map { it.owningKey })
             val txBuilder = TransactionBuilder(notary)
-                    .addInputState(iouStateRef)
+                    .addInputState(iouStateAndRef)
                     .addCommand(txCommand)
 
             // Stage 2.
@@ -176,13 +177,8 @@ object ExampleFlow {
             // Stage 4.
             progressTracker.currentStep = GATHERING_SIGS
             // Send the state to the counterparty, and receive it back with their signature.
-            val otherPartyFlow: FlowSession
-            if (partSignedTx.sigs[0].by == iouStateRef.state.data.lender.owningKey) {
-                otherPartyFlow = initiateFlow(iouStateRef.state.data.borrower)
-            }
-            else {
-                otherPartyFlow = initiateFlow(iouStateRef.state.data.lender)
-            }
+            val counterParty = iouStateAndRef.state.data.participants.minus(serviceHub.myInfo.legalIdentities.single()).single()
+            val otherPartyFlow = initiateFlow(counterParty)
             val fullySignedTx = subFlow(CollectSignaturesFlow(partSignedTx,setOf(otherPartyFlow), GATHERING_SIGS.childProgressTracker()))
 
             // Stage 5.

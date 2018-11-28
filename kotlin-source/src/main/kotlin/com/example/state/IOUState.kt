@@ -25,7 +25,7 @@ data class IOUState(val value: Int,
                     override val linearId: UniqueIdentifier = UniqueIdentifier()):
         LinearState, QueryableState {
     /** The public keys of the involved parties. */
-    override val participants: List<AbstractParty> get() = listOf(lender, borrower)
+    override val participants: List<Party> get() = listOf(lender, borrower)
 
     override fun generateMappedObject(schema: MappedSchema): PersistentState {
         return when (schema) {
