@@ -154,11 +154,14 @@ object ExampleFlow {
             val iouStateAndRef = serviceHub.toStateAndRef<IOUState>(stateRef)
             // Obtain a reference to the notary we want to use.
             val notary = iouStateAndRef.state.notary;
-            val myParty = serviceHub.myInfo.legalIdentities.first()
+            val myIdentity = setOf(iouStateAndRef.state.data.borrower, iouStateAndRef.state.data.lender)
+                                    .filter { serviceHub.myInfo.isLegalIdentity(it) }
 
             requireThat {
-                "Only the borrower or the lender can initiate the flow." using (myParty == iouStateAndRef.state.data.lender || myParty == iouStateAndRef.state.data.borrower)
+                "Only the borrower or the lender can initiate the flow." using (myIdentity.isNotEmpty())
             }
+
+            val myParty = myIdentity.first()
 
             // Stage 1.
             progressTracker.currentStep = GENERATING_TRANSACTION
