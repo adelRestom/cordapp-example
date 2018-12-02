@@ -25,6 +25,7 @@ class IOUFlowTests {
         b = network.createPartyNode()
         // For real nodes this happens automatically, but we have to manually register the flow for tests.
         listOf(a, b).forEach { it.registerInitiatedFlow(ExampleFlow.Acceptor::class.java) }
+        listOf(a, b).forEach { it.registerInitiatedFlow(ExampleFlow.DestroyIOUAcceptor::class.java) }
         network.runNetwork()
     }
 
@@ -34,6 +35,71 @@ class IOUFlowTests {
     }
 
     @Test
+    fun `recorded "Destroy IOU" transaction has no outputs and a single input, the input IOU`() {
+        // Create the IOU
+        val iouValue = 1
+        val flow = ExampleFlow.Initiator(iouValue, b.info.singleIdentity())
+        val future = a.startFlow(flow)
+        network.runNetwork()
+        a.transaction {
+            val ious = a.services.vaultService.queryBy<IOUState>().states
+            val ref = ious.single().ref
+            val txHash = ref.txhash.toString()
+            val txIndex = ref.index
+
+            // Destroy the IOU
+            val destroyFlow = ExampleFlow.DestroyIOUInitiator(txHash, txIndex)
+            val destroyFuture = a.startFlow(destroyFlow)
+            network.runNetwork()
+            val destroySignedTx = destroyFuture.getOrThrow()
+
+            // We check the recorded "Destroy" transaction in both vaults.
+            for (node in listOf(a, b)) {
+                val recordedTx = node.services.validatedTransactions.getTransaction(destroySignedTx.id)
+                val txInputs = recordedTx!!.tx.inputs
+                assert(txInputs.size == 1)
+                val txOutputs = recordedTx!!.tx.outputs
+                assert(txOutputs.isEmpty())
+
+                val stateRef = txInputs[0]
+                val iouStateAndRef = node.services.toStateAndRef<IOUState>(stateRef)
+                val recordedState = iouStateAndRef.state.data
+                assertEquals(recordedState.value, iouValue)
+                assertEquals(recordedState.lender, a.info.singleIdentity())
+                assertEquals(recordedState.borrower, b.info.singleIdentity())
+            }
+        }
+    }
+
+    @Test
+    fun `flow removes the IOU from both parties' vaults`() {
+        // Create the IOU
+        val iouValue = 1
+        val flow = ExampleFlow.Initiator(iouValue, b.info.singleIdentity())
+        val future = a.startFlow(flow)
+        network.runNetwork()
+        b.transaction {
+            val ious = b.services.vaultService.queryBy<IOUState>().states
+            val ref = ious.single().ref
+            val txHash = ref.txhash.toString()
+            val txIndex = ref.index
+
+            // Destroy the IOU
+            val destroyFlow = ExampleFlow.DestroyIOUInitiator(txHash, txIndex)
+            val destroyFuture = b.startFlow(destroyFlow)
+            network.runNetwork()
+
+            // Vaults should be empty.
+            for (node in listOf(a, b)) {
+                node.transaction {
+                    val ious = node.services.vaultService.queryBy<IOUState>().states
+                    assert(ious.isEmpty())
+                }
+            }
+        }
+    }
+
+    /*@Test
     fun `flow rejects invalid IOUs`() {
         val flow = ExampleFlow.Initiator(-1, b.info.singleIdentity())
         val future = a.startFlow(flow)
@@ -116,5 +182,5 @@ class IOUFlowTests {
                 assertEquals(recordedState.borrower, b.info.singleIdentity())
             }
         }
-    }
+    }*/
 }

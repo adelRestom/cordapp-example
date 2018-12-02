@@ -15,6 +15,7 @@ import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.TransactionBuilder
 import net.corda.core.utilities.ProgressTracker
 import net.corda.core.utilities.ProgressTracker.Step
+import net.corda.core.crypto.SecureHash
 
 /**
  * This flow allows two parties (the [Initiator] and the [Acceptor]) to come to an agreement about the IOU encapsulated
@@ -118,7 +119,7 @@ object ExampleFlow {
 
     @InitiatingFlow
     @StartableByRPC
-    class DestroyIOUInitiator(val stateRef: StateRef) : FlowLogic<SignedTransaction>() {
+    class DestroyIOUInitiator(val txHash: String, val txIndex: Int) : FlowLogic<SignedTransaction>() {
         /**
          * The progress tracker checkpoints each stage of the flow and outputs the specified messages when each
          * checkpoint is reached in the code. See the 'progressTracker.currentStep' expressions within the call() function.
@@ -151,17 +152,18 @@ object ExampleFlow {
          */
         @Suspendable
         override fun call(): SignedTransaction {
+            val stateRef: StateRef = StateRef(SecureHash.parse(txHash), txIndex)
             val iouStateAndRef = serviceHub.toStateAndRef<IOUState>(stateRef)
             // Obtain a reference to the notary we want to use.
             val notary = iouStateAndRef.state.notary;
-            val myIdentity = setOf(iouStateAndRef.state.data.borrower, iouStateAndRef.state.data.lender)
+            val myRelevantParties = setOf(iouStateAndRef.state.data.borrower, iouStateAndRef.state.data.lender)
                                     .filter { serviceHub.myInfo.isLegalIdentity(it) }
 
             requireThat {
-                "Only the borrower or the lender can initiate the flow." using (myIdentity.isNotEmpty())
+                "Only the borrower or the lender can initiate the flow." using (myRelevantParties.isNotEmpty())
             }
 
-            val myParty = myIdentity.first()
+            val myParty = myRelevantParties.first()
 
             // Stage 1.
             progressTracker.currentStep = GENERATING_TRANSACTION
@@ -185,7 +187,7 @@ object ExampleFlow {
             progressTracker.currentStep = GATHERING_SIGS
             // Send the state to the counterparty, and receive it back with their signature.
             val counterParty = iouStateAndRef.state.data.participants.minus(myParty).single()
-            val otherPartyFlow = initiateFlow(counterParty!!)
+            val otherPartyFlow = initiateFlow(counterParty)
             val fullySignedTx = subFlow(CollectSignaturesFlow(partSignedTx, setOf(otherPartyFlow), GATHERING_SIGS.childProgressTracker()))
 
             // Stage 5.

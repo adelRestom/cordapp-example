@@ -15,6 +15,54 @@ class IOUContractTests {
     private val iouValue = 1
 
     @Test
+    fun `Destroy IOU transaction must have one input`() {
+        ledgerServices.ledger {
+            transaction {
+                // Even though Destroy command doesn't create an output; we need to add the below output,
+                // otherwise we'll get the follwoing exception:
+                // "A transaction must contain at least one input or output state"
+                output(IOU_CONTRACT_ID, IOUState(iouValue, miniCorp.party, megaCorp.party))
+                command(listOf(megaCorp.publicKey, miniCorp.publicKey), IOUContract.Commands.Destroy())
+                `fails with`("Only one input state should be consumed when destroying an IOU.")
+            }
+        }
+    }
+
+    @Test
+    fun `Destroy IOU transaction must have no outputs`() {
+        ledgerServices.ledger {
+            transaction {
+                input(IOU_CONTRACT_ID, IOUState(iouValue, miniCorp.party, megaCorp.party))
+                output(IOU_CONTRACT_ID, IOUState(iouValue, miniCorp.party, megaCorp.party))
+                command(listOf(megaCorp.publicKey, miniCorp.publicKey), IOUContract.Commands.Destroy())
+                `fails with`("There should be no outputs.")
+            }
+        }
+    }
+
+    @Test
+    fun `Destroy IOU transaction must have one input and no output`() {
+        ledgerServices.ledger {
+            transaction {
+                input(IOU_CONTRACT_ID, IOUState(iouValue, miniCorp.party, megaCorp.party))
+                command(listOf(megaCorp.publicKey, miniCorp.publicKey), IOUContract.Commands.Destroy())
+                verifies()
+            }
+        }
+    }
+
+    @Test
+    fun `Destroy IOU transaction must be signed by borrower and lender`() {
+        ledgerServices.ledger {
+            transaction {
+                input(IOU_CONTRACT_ID, IOUState(iouValue, miniCorp.party, megaCorp.party))
+                command(listOf(megaCorp.publicKey), IOUContract.Commands.Destroy())
+                `fails with` ("All of the participants must be signers.")
+            }
+        }
+    }
+
+    /*@Test
     fun `transaction must include Create command`() {
         ledgerServices.ledger {
             transaction {
@@ -92,5 +140,5 @@ class IOUContractTests {
                 `fails with`("The IOU's value must be non-negative.")
             }
         }
-    }
+    }*/
 }
