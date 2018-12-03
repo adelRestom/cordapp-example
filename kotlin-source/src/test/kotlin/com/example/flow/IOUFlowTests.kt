@@ -12,6 +12,9 @@ import org.junit.Before
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import net.corda.core.node.services.Vault
+import net.corda.core.node.services.vault.QueryCriteria
+
 
 class IOUFlowTests {
     lateinit var network: MockNetwork
@@ -41,33 +44,33 @@ class IOUFlowTests {
         val flow = ExampleFlow.Initiator(iouValue, b.info.singleIdentity())
         val future = a.startFlow(flow)
         network.runNetwork()
-        a.transaction {
-            val ious = a.services.vaultService.queryBy<IOUState>().states
-            val ref = ious.single().ref
-            val txHash = ref.txhash.toString()
-            val txIndex = ref.index
+        val ious = a.transaction {
+            a.services.vaultService.queryBy<IOUState>().states
+        }
+        val ref = ious.single().ref
+        val txHash = ref.txhash.toString()
+        val txIndex = ref.index
 
-            // Destroy the IOU
-            val destroyFlow = ExampleFlow.DestroyIOUInitiator(txHash, txIndex)
-            val destroyFuture = a.startFlow(destroyFlow)
-            network.runNetwork()
-            val destroySignedTx = destroyFuture.getOrThrow()
+        // Destroy the IOU
+        val destroyFlow = ExampleFlow.DestroyIOUInitiator(txHash, txIndex)
+        val destroyFuture = a.startFlow(destroyFlow)
+        network.runNetwork()
+        val destroySignedTx = destroyFuture.getOrThrow()
 
-            // We check the recorded "Destroy" transaction in both vaults.
-            for (node in listOf(a, b)) {
-                val recordedTx = node.services.validatedTransactions.getTransaction(destroySignedTx.id)
-                val txInputs = recordedTx!!.tx.inputs
-                assert(txInputs.size == 1)
-                val txOutputs = recordedTx!!.tx.outputs
-                assert(txOutputs.isEmpty())
+        // We check the recorded "Destroy" transaction in both vaults.
+        for (node in listOf(a, b)) {
+            val recordedTx = node.services.validatedTransactions.getTransaction(destroySignedTx.id)
+            val txInputs = recordedTx!!.tx.inputs
+            assert(txInputs.size == 1)
+            val txOutputs = recordedTx!!.tx.outputs
+            assert(txOutputs.isEmpty())
 
-                val stateRef = txInputs[0]
-                val iouStateAndRef = node.services.toStateAndRef<IOUState>(stateRef)
-                val recordedState = iouStateAndRef.state.data
-                assertEquals(recordedState.value, iouValue)
-                assertEquals(recordedState.lender, a.info.singleIdentity())
-                assertEquals(recordedState.borrower, b.info.singleIdentity())
-            }
+            val stateRef = txInputs[0]
+            val iouStateAndRef = node.services.toStateAndRef<IOUState>(stateRef)
+            val recordedState = iouStateAndRef.state.data
+            assertEquals(recordedState.value, iouValue)
+            assertEquals(recordedState.lender, a.info.singleIdentity())
+            assertEquals(recordedState.borrower, b.info.singleIdentity())
         }
     }
 
@@ -78,23 +81,24 @@ class IOUFlowTests {
         val flow = ExampleFlow.Initiator(iouValue, b.info.singleIdentity())
         val future = a.startFlow(flow)
         network.runNetwork()
-        b.transaction {
-            val ious = b.services.vaultService.queryBy<IOUState>().states
-            val ref = ious.single().ref
-            val txHash = ref.txhash.toString()
-            val txIndex = ref.index
+        val ious = b.transaction {
+            b.services.vaultService.queryBy<IOUState>().states
+        }
+        val ref = ious.single().ref
+        val txHash = ref.txhash.toString()
+        val txIndex = ref.index
 
-            // Destroy the IOU
-            val destroyFlow = ExampleFlow.DestroyIOUInitiator(txHash, txIndex)
-            val destroyFuture = b.startFlow(destroyFlow)
-            network.runNetwork()
+        // Destroy the IOU
+        val destroyFlow = ExampleFlow.DestroyIOUInitiator(txHash, txIndex)
+        val destroyFuture = b.startFlow(destroyFlow)
+        network.runNetwork()
 
-            // Vaults should be empty.
-            for (node in listOf(a, b)) {
-                node.transaction {
-                    val ious = node.services.vaultService.queryBy<IOUState>().states
-                    assert(ious.isEmpty())
-                }
+        // IOU is now marked as consumed in participating nodes
+        for (node in listOf(a, b)) {
+            node.transaction {
+                val unconsumedCriteria = QueryCriteria.VaultQueryCriteria(Vault.StateStatus.UNCONSUMED)
+                val ious = node.services.vaultService.queryBy<IOUState>(unconsumedCriteria).states
+                assert(ious.isEmpty())
             }
         }
     }

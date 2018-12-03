@@ -18,10 +18,8 @@ class IOUContractTests {
     fun `Destroy IOU transaction must have one input`() {
         ledgerServices.ledger {
             transaction {
-                // Even though Destroy command doesn't create an output; we need to add the below output,
-                // otherwise we'll get the follwoing exception:
-                // "A transaction must contain at least one input or output state"
-                output(IOU_CONTRACT_ID, IOUState(iouValue, miniCorp.party, megaCorp.party))
+                input(IOU_CONTRACT_ID, IOUState(iouValue, miniCorp.party, megaCorp.party))
+                input(IOU_CONTRACT_ID, IOUState(iouValue, miniCorp.party, megaCorp.party))
                 command(listOf(megaCorp.publicKey, miniCorp.publicKey), IOUContract.Commands.Destroy())
                 `fails with`("Only one input state should be consumed when destroying an IOU.")
             }

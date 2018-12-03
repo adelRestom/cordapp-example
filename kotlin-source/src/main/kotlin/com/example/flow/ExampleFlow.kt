@@ -119,7 +119,11 @@ object ExampleFlow {
 
     @InitiatingFlow
     @StartableByRPC
-    class DestroyIOUInitiator(val txHash: String, val txIndex: Int) : FlowLogic<SignedTransaction>() {
+    class DestroyIOUInitiator(val stateRef: StateRef) : FlowLogic<SignedTransaction>() {
+
+        constructor(txSecurehash: SecureHash, txIndex: Int) : this(StateRef(txSecurehash, txIndex))
+        constructor(txHash: String, txIndex: Int) : this(SecureHash.parse(txHash), txIndex)
+
         /**
          * The progress tracker checkpoints each stage of the flow and outputs the specified messages when each
          * checkpoint is reached in the code. See the 'progressTracker.currentStep' expressions within the call() function.
@@ -152,7 +156,6 @@ object ExampleFlow {
          */
         @Suspendable
         override fun call(): SignedTransaction {
-            val stateRef: StateRef = StateRef(SecureHash.parse(txHash), txIndex)
             val iouStateAndRef = serviceHub.toStateAndRef<IOUState>(stateRef)
             // Obtain a reference to the notary we want to use.
             val notary = iouStateAndRef.state.notary;
